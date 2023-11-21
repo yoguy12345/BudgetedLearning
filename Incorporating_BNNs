@@ -1,0 +1,57 @@
+import pandas as pd
+import numpy as np
+import pymc3 as pm
+import theano
+from theano import shared
+
+# Generate some example data
+np.random.seed(123)
+n = 500
+time = np.random.uniform(0, 10, n)
+event = np.random.choice([0, 1], size=n)
+covariate1 = np.random.normal(size=n)
+covariate2 = np.random.normal(size=n)
+
+# Create a pandas DataFrame with the data
+data = pd.DataFrame({
+    'time': time,
+    'event': event,
+    'covariate1': covariate1,
+    'covariate2': covariate2
+})
+
+# Define the Bayesian Cox model with specified initial values
+with pm.Model() as cox_model:
+    # Prior for the baseline hazard function
+    lambda0 = pm.Exponential('lambda0', lam=0.01)
+    
+    # Priors for the regression coefficients
+    beta1 = pm.Normal('beta1', mu=0, sd=1)
+    beta2 = pm.Normal('beta2', mu=0, sd=1)
+    
+    # Linear predictor
+    eta = lambda0 * pm.math.exp(beta1 * data['covariate1'] + beta2 * data['covariate2'])
+    
+    # Cumulative hazard function using theano.tensor.cumsum
+    lambda_cumulative = theano.tensor.cumsum(eta)
+    
+    # Likelihood
+    obs = pm.Poisson('obs', mu=pm.math.exp(lambda_cumulative), observed=data['event'])
+
+# Specify initial values for parameters
+start = {
+    'lambda0': 0.01,
+    'beta1': 0.0,
+    'beta2': 0.0
+}
+
+# Fit the model with specified initial values
+with cox_model:
+    trace = pm.sample(4000, tune=2000, cores=1, start=start)
+
+# Plot the posterior distributions
+pm.plot_posterior(trace, var_names=['lambda0', 'beta1', 'beta2'])
+
+# Extract and print summary statistics
+summary = pm.summary(trace, var_names=['lambda0', 'beta1', 'beta2'])
+print(summary)
